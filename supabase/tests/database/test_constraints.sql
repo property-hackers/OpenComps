@@ -3,7 +3,7 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
-\ir fixtures/atlanta_records.sql
+\ir fixtures/atlanta_records.psql
 
 SELECT plan(57);
 

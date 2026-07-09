@@ -15,7 +15,7 @@
 #   SELECT * FROM reference_dataset_loads WHERE dataset = 'us_zips'
 #   ORDER BY loaded_at DESC LIMIT 1;
 #
-# Requires on the host: curl, unzip, psql.
+# Requires on the host: curl, unzip, psql, node.
 #
 # NOTE: Use of the free database in production requires that you link back to:
 # https://simplemaps.com/data/us-zips
@@ -94,8 +94,16 @@ fi
 VERSION_SQL="${VERSION//\'/\'\'}"
 SOURCE_SQL="${SOURCE//\'/\'\'}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# The staging rows are streamed as generated multi-row INSERTs rather than
+# \copy: COPY FROM STDIN desynchronizes the pglite-socket protocol, while
+# plain INSERTs work identically over Docker TCP and the tinbase dev server.
+# Everything still runs in one psql session (the temp table must survive)
+# and one transaction.
 echo "Loading into us_zips..."
-psql "$DB" -v ON_ERROR_STOP=1 <<SQL
+{
+  cat <<SQL
 BEGIN;
 
 CREATE TEMP TABLE _uszips_staging (
@@ -105,9 +113,11 @@ CREATE TEMP TABLE _uszips_staging (
     county_names_all TEXT, county_fips_all TEXT,
     imprecise TEXT, military TEXT, timezone TEXT
 );
+SQL
 
-\\copy _uszips_staging FROM '$WORKDIR/uszips.csv' WITH (FORMAT csv, HEADER true)
+  node "$SCRIPT_DIR/lib/csv_to_inserts.mjs" _uszips_staging "$WORKDIR/uszips.csv"
 
+  cat <<SQL
 TRUNCATE us_zips;
 
 INSERT INTO us_zips (
@@ -143,6 +153,7 @@ COMMIT;
 
 SELECT COUNT(*) AS zips_loaded, '$VERSION_SQL' AS release_version FROM us_zips;
 SQL
+} | psql "$DB" -v ON_ERROR_STOP=1
 
 echo "Done. Reminder: production use of the free dataset requires a link"
 echo "back to https://simplemaps.com/data/us-zips"

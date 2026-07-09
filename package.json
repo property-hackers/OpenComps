@@ -1,0 +1,24 @@
+{
+  "name": "opencomps",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev_server.mjs",
+    "test": "pnpm run test:unit && ./scripts/test_db.sh",
+    "test:unit": "node --test scripts/lib/*.test.mjs",
+    "load-zips": "./scripts/load_us_zips.sh \"postgres://postgres@127.0.0.1:${PGLITE_PORT:-55432}/postgres\"",
+    "seed": "./scripts/seed_dev.sh \"postgres://postgres@127.0.0.1:${PGLITE_PORT:-55432}/postgres\""
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.4",
+    "@electric-sql/pglite-pgtap": "0.0.5",
+    "@electric-sql/pglite-postgis": "0.2.4",
+    "@electric-sql/pglite-socket": "0.2.7",
+    "tinbase": "0.7.1"
+  }
+}

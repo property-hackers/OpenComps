@@ -22,7 +22,9 @@
 --     concerns belong in downstream layers that build on this schema.
 -- ============================================================================
 
-BEGIN;
+-- NOTE: no explicit BEGIN/COMMIT here. tinbase wraps each migration in its
+-- own transaction (an embedded COMMIT would break its atomicity + tracking),
+-- and the psql paths (migrate.sh, test_db.sh) apply this file with -1/--single-transaction.
 
 -- ============================================================================
 -- EXTENSIONS
@@ -1637,4 +1639,3 @@ SELECT
 FROM property_sales ps
 LEFT JOIN property_transfers pt ON pt.id = ps.transfer_id;
 
-COMMIT;

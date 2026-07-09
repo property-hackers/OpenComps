@@ -1,34 +1,72 @@
 # AGENTS.md
 
-OpenComps is a PostgreSQL 17 + PostGIS schema for property records and
+OpenComps is a PostgreSQL + PostGIS schema (PostgreSQL 17+; dev runs 18) for property records and
 comparables. There is no application code yet, and never slop out nextjs: the deliverable is
-`database/schema/opencomps.sql` (one file, single transaction), its pgTAP
-suite, and the loader/seed scripts.
+`supabase/migrations/20260709000000_opencomps.sql` (one file, applied
+atomically — tinbase wraps it in a transaction, the psql paths use `-1`;
+never add BEGIN/COMMIT to migration files), its pgTAP suite, and the
+loader/seed scripts.
 
 ## Dev environment tips
 
-- Boot the database with `docker compose up -d --wait pg` (Postgres 17,
-  PostGIS, pgTAP, pg_prove included).
-- Apply the schema to the `opencomps` dev database with
+Two dev paths. Default is tinbase + PGlite (no Docker); Docker remains the
+full-fidelity reference (both run Postgres 18 + PostGIS 3.6; PGlite is
+an experimental WASM build).
+
+| Port | What |
+|---|---|
+| 54321 | tinbase HTTP: REST `/rest/v1/`, Studio `/_/` (`TINBASE_PORT`) |
+| 55432 | tinbase Postgres wire for psql (`PGLITE_PORT`) |
+| 55433 | throwaway pgTAP test server (`PGLITE_TEST_PORT`) |
+| 5432 | Docker Postgres (`POSTGRES_PORT`; often overridden to 55432 — stop one stack before running the other on a shared port) |
+
+- **tinbase path:** `pnpm install`, then `pnpm dev`. Boot applies any
+  untracked `supabase/migrations/*.sql` (recorded in
+  `supabase_migrations.schema_migrations`, skipped thereafter), persists in
+  `.tinbase/pglite/`; `--memory` for ephemeral; schema edits require
+  `rm -rf .tinbase` and restart, then re-run seeds. Then `pnpm load-zips`,
+  `pnpm seed`, `pnpm test`. Connect with
+  `psql postgres://postgres@127.0.0.1:55432/postgres`.
+- **Studio:** http://127.0.0.1:54321/_/ — sign in with the full ~200-char
+  `service_role` key from the `pnpm dev` startup output (partial paste →
+  "Invalid API key"; pipe through `pbcopy` rather than hand-selecting).
+- **Docker path:** `docker compose up -d --wait pg`, then
   `./scripts/migrate.sh`. It expects an empty database — there are no
   incremental migrations pre-release. To pick up schema edits, drop and
   recreate the dev database and re-apply, or `docker compose down -v` to
-  reset everything.
+  reset everything. Connect with
+  `psql postgres://postgres:postgres@localhost:5432/opencomps`.
 - Load US ZIP reference data with `./scripts/load_us_zips.sh`, then seed
   deterministic dev data with `./scripts/seed_dev.sh` (requires us_zips;
   refuses to run twice).
 - All scripts accept `POSTGRES_PORT`/`POSTGRES_HOST`/`POSTGRES_USER`/
-  `POSTGRES_PASSWORD` env vars or a connection URL as `$1`.
-- Connect with `psql postgres://postgres:postgres@localhost:5432/opencomps`.
+  `POSTGRES_PASSWORD` env vars or a connection URL as `$1` (the `pnpm`
+  wrappers pass the tinbase URL).
+- **Never use `\copy`/COPY FROM STDIN in seeds or loaders** — it
+  desynchronizes the pglite-socket protocol. Bulk loads are generated
+  multi-row INSERTs (see `scripts/lib/csv_to_inserts.mjs`).
+- PGlite is single-writer and has no `CREATE DATABASE`; run psql sessions
+  against it one at a time, sequentially.
 
 ## Testing instructions
 
-- Run the full suite with `./scripts/test_db.sh`. It drops, recreates, and
-  migrates a dedicated `opencomps_test` database every run — never prep the
-  test database manually and never point tests at dev data.
-- Tests live in `tests/pgtap/test_*.sql`. Each file wraps in
+- Run the full suite with `./scripts/test_db.sh`. Backend auto-detected
+  (running Docker service → PGlite → local Postgres); force with
+  `OPENCOMPS_TEST_BACKEND=docker|pglite|local`. Docker/local drop,
+  recreate, and migrate a dedicated `opencomps_test` database every run;
+  the pglite backend boots a fresh in-memory instance instead (PGlite has
+  no `CREATE DATABASE`) — same isolation guarantee. Never prep the test
+  database manually and never point tests at dev data.
+- Tests live in `supabase/tests/database/*.sql` (the Supabase CLI's
+  directory convention; `supabase test db` works against Docker/hosted
+  Supabase but NOT against the PGlite socket — the CLI's connection
+  handling wedges pglite-socket. Use `./scripts/test_db.sh`). Each file wraps in
   `BEGIN; ... ROLLBACK;`, loads fixtures via `\ir fixtures/...`, and
   declares an exact `plan(N)` — update N when adding tests.
+- Fixtures use the `.psql` extension (`supabase/tests/database/fixtures/`),
+  NOT `.sql`: `supabase test db` runs pg_prove recursively over every
+  `.sql`/`.pg` file under `supabase/tests`, and a fixture executed as a
+  test would fail. Keep it `.psql` so only real test files are collected.
 - Write the failing test first and watch it fail for the right reason
   (`throws_ok` reporting "no exception" means the constraint is missing);
   then change the schema and watch it pass.

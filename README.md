@@ -75,8 +75,9 @@ trails.
 
 ## What's inside
 
-One file, `database/schema/opencomps.sql` (PostgreSQL 17+, PostGIS 3.5+):
-41 tables, 3 views.
+One file, `supabase/migrations/20260709000000_opencomps.sql` (PostgreSQL 17+,
+PostGIS 3.5+; both bundled dev paths run PostgreSQL 18 + PostGIS 3.6): 41
+tables, 3 views.
 
 | Layer | Tables |
 |---|---|
@@ -92,13 +93,82 @@ One file, `database/schema/opencomps.sql` (PostgreSQL 17+, PostGIS 3.5+):
 
 ## Getting started
 
-Requirements: Docker with Docker Compose for local setup, or PostgreSQL 17+
-with PostGIS 3.5+ installed manually (extensions used: `postgis`, `citext`,
-`pg_trgm`, `btree_gist`; plus `pgtap` to run the test suite).
+Three ways to run OpenComps, lightest first:
 
-### Local Docker database
+1. **tinbase + PGlite (default, no Docker)** — Node 22+, pnpm, and psql.
+2. **Docker** — full-fidelity PostgreSQL 18 + PostGIS 3.6 with pgTAP and
+   `pg_prove` baked in.
+3. **Manual** — your own PostgreSQL 17+ with PostGIS 3.5+ (extensions used:
+   `postgis`, `citext`, `pg_trgm`, `btree_gist`; plus `pgtap` for the test
+   suite).
 
-The included Docker setup runs PostgreSQL 17 with PostGIS 3.5, the schema
+### Quick start: tinbase + PGlite (no Docker)
+
+The default dev path runs the whole database in a single Node process on
+[tinbase](https://www.tinbase.dev), a Supabase-compatible backend
+over [PGlite](https://pglite.dev) (Postgres in WASM) with real PostGIS.
+You get the schema served three ways at once: the raw Postgres wire protocol
+for psql, a Supabase-compatible REST API, and a Studio dashboard.
+
+Why tinbase instead of `supabase start`? Same wire protocols and migration
+conventions, but one Node process at ~tens of MB of RAM instead of a
+12-container Docker stack — boots in seconds, resets with `rm -rf .tinbase`,
+and your migrations stay portable to hosted Supabase.
+
+This repo uses [pnpm](https://pnpm.io) (preferred over npm here — the
+committed lockfile is `pnpm-lock.yaml`, and `package.json` pins the version
+via `packageManager`). If you don't have it:
+
+```bash
+npm install -g pnpm   # or: corepack enable && corepack prepare pnpm --activate
+```
+
+```bash
+pnpm install
+pnpm dev
+#   REST      http://127.0.0.1:54321/rest/v1/
+#   Studio    http://127.0.0.1:54321/_/
+#   psql      postgres://postgres@127.0.0.1:55432/postgres
+```
+
+Migrations run automatically at boot: every `supabase/migrations/*.sql` not
+yet recorded in `supabase_migrations.schema_migrations` is applied, then
+skipped on later boots.
+
+Then, in another terminal:
+
+```bash
+pnpm load-zips   # required first: counties resolve via ZIP
+pnpm seed        # deterministic Atlanta-metro dev data
+pnpm test        # unit tests + the pgTAP suite on a throwaway instance
+```
+
+**Studio:** open <http://127.0.0.1:54321/_/> and sign in with the
+`service_role` key from the `pnpm dev` startup output. Copy the whole
+token — it's ~200 characters and wraps across terminal lines, and a partial
+paste fails with "Invalid API key". (`... | pbcopy` is your friend.)
+
+The database persists in `.tinbase/pglite/` (gitignored).
+`rm -rf .tinbase` resets everything (next boot re-migrates; re-run
+`pnpm load-zips && pnpm seed`). `pnpm dev -- --memory` runs an ephemeral
+in-memory instance instead. Override ports with `TINBASE_PORT`
+(HTTP, default 54321) and `PGLITE_PORT` (Postgres wire, default 55432).
+
+Because the REST API speaks Supabase's wire protocol, the official
+`@supabase/supabase-js` SDK works against it unchanged — point it at
+`http://127.0.0.1:54321` with the anon key printed at startup.
+
+Two caveats: PGlite is an **experimental WASM build** of Postgres 18 +
+PostGIS 3.6 (the Docker path below runs the same versions natively and is
+the full-fidelity reference — the same pgTAP suite runs on both, so
+divergence surfaces as test failures rather than silent drift), and PGlite
+is a single-writer database — fine for dev tools
+and one interactive session, not for concurrent load. Bulk loads over the
+socket must avoid `\copy`/COPY FROM STDIN (the loaders already do).
+
+### Full-fidelity Docker database
+
+The included Docker setup runs PostgreSQL 18 with PostGIS 3.6, the schema
 extensions, pgTAP, and `pg_prove`.
 
 Boot the database, apply the schema, and run the pgTAP test suite:
@@ -113,6 +183,9 @@ Two databases are involved: `migrate.sh` applies the schema to the
 `opencomps` dev database, while `test_db.sh` runs against a dedicated
 `opencomps_test` database that it recreates from the schema file on every
 run — tests always exercise the current schema and never touch dev data.
+(`test_db.sh` auto-detects its backend: the running Docker service, then
+PGlite, then a local Postgres; force one with
+`OPENCOMPS_TEST_BACKEND=docker|pglite|local`.)
 To start over completely, `docker compose down -v` destroys the database
 volume; repeat the steps above to rebuild.
 
@@ -138,11 +211,12 @@ POSTGRES_PORT=55432 ./scripts/test_db.sh
 
 ```bash
 createdb opencomps
-psql -d opencomps -v ON_ERROR_STOP=1 -f database/schema/opencomps.sql
+psql -d opencomps -v ON_ERROR_STOP=1 -1 -f supabase/migrations/20260709000000_opencomps.sql
 ```
 
-The whole schema applies in a single transaction; a failed apply leaves
-nothing behind.
+The `-1` applies the whole schema in a single transaction (the file itself
+carries no BEGIN/COMMIT so tinbase's migration runner can wrap it); a failed
+apply leaves nothing behind.
 
 ### US ZIP geodata
 

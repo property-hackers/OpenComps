@@ -3,9 +3,9 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
-\ir fixtures/atlanta_records.sql
-\ir fixtures/comp_scenarios.sql
-\ir fixtures/global_scenarios.sql
+\ir fixtures/atlanta_records.psql
+\ir fixtures/comp_scenarios.psql
+\ir fixtures/global_scenarios.psql
 
 SELECT plan(10);
 

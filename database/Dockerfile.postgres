@@ -1,13 +1,13 @@
 # OpenComps local-dev Postgres image.
-# PostgreSQL 17 + PostGIS 3.5 + pgTAP + pg_prove.
+# PostgreSQL 18 + PostGIS 3.6 + pgTAP + pg_prove (matches PGlite: Postgres 18 / PostGIS 3.6).
 #
 # imresamu/postgis provides arm64-friendly PostGIS images for Apple Silicon
 # development.
-ARG PG_MAJOR=17
-ARG POSTGIS_VERSION=3.5
+ARG PG_MAJOR=18
+ARG POSTGIS_VERSION=3.6
 FROM imresamu/postgis:${PG_MAJOR}-${POSTGIS_VERSION}-bookworm
 
-ARG PG_MAJOR=17
+ARG PG_MAJOR=18
 
 ENV POSTGRES_PASSWORD=postgres
 

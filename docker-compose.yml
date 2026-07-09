@@ -4,14 +4,16 @@ services:
       context: ./database
       dockerfile: Dockerfile.postgres
       args:
-        PG_MAJOR: "17"
-        POSTGIS_VERSION: "3.5"
+        PG_MAJOR: "18"
+        POSTGIS_VERSION: "3.6"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18+ images keep PGDATA in a version subdirectory; mount the
+      # parent so future major upgrades can pg_upgrade --link in place.
+      - pgdata:/var/lib/postgresql
       - ./database/init:/docker-entrypoint-initdb.d:ro
-      - ./tests:/tests:ro
+      - ./supabase/tests:/tests:ro
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-opencomps}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}

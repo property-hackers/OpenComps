@@ -15,7 +15,5 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 DB="${1:-${DATABASE_URL:-postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@${POSTGRES_HOST:-localhost}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-opencomps}}}"
 
-cd "$ROOT_DIR"   # dev_seed.sql \copy path is repo-relative
-
 echo "Seeding dev data..."
-psql "$DB" -v ON_ERROR_STOP=1 -f database/seeds/dev_seed.sql
+psql "$DB" -v ON_ERROR_STOP=1 -f "$ROOT_DIR/database/seeds/dev_seed.sql"
