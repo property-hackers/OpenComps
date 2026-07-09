@@ -42,14 +42,16 @@ SELECT is(
     'multifamily arms-length sale comp stores headline price'
 );
 
-SELECT is(
-    (
-        SELECT (metrics->>'price_per_unit')::NUMERIC
+SELECT results_eq(
+    $$
+        SELECT price_per_unit, unit_count_at_sale
         FROM property_sales
         WHERE id = 'f0000000-0000-0000-0000-000000000004'
-    ),
-    428125::NUMERIC,
-    'asset-class long-tail metric (price per unit) is queryable from metrics JSONB'
+    $$,
+    $$
+        VALUES (428125.00::NUMERIC(14,2), 160)
+    $$,
+    'per-unit price and unit count at sale are typed as-of-event columns'
 );
 
 SELECT is(
@@ -337,14 +339,15 @@ SELECT ok(
     'land details store available utilities as a searchable array'
 );
 
+-- areas live in base units (sq ft); acres are an app-layer display conversion
 SELECT is(
     (
-        SELECT (metrics->>'price_per_acre')::NUMERIC
+        SELECT ROUND(price_per_area * 43560, 2)
         FROM property_sales
         WHERE id = 'f0000000-0000-0000-0000-000000000007'
     ),
-    217800::NUMERIC,
-    'land sale comp stores price per acre in metrics'
+    217800.00::NUMERIC,
+    'land sale price per acre derives from typed base-unit price_per_area'
 );
 
 -- ---------------------------------------------------------------------------

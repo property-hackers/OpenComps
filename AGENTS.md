@@ -2,10 +2,10 @@
 
 OpenComps is a PostgreSQL + PostGIS schema (PostgreSQL 17+; dev runs 18) for property records and
 comparables. There is no application code yet, and never slop out nextjs: the deliverable is
-`supabase/migrations/20260709000000_opencomps.sql` (one file, applied
-atomically — tinbase wraps it in a transaction, the psql paths use `-1`;
-never add BEGIN/COMMIT to migration files), its pgTAP suite, and the
-loader/seed scripts.
+the migrations in `supabase/migrations/` (each applied atomically in
+timestamp order — tinbase wraps each in a transaction, the psql paths use
+`-1`; never add BEGIN/COMMIT to migration files), their pgTAP suite, and
+the loader/seed scripts.
 
 ## Dev environment tips
 
@@ -30,11 +30,15 @@ an experimental WASM build).
 - **Studio:** http://127.0.0.1:54321/_/ — sign in with the full ~200-char
   `service_role` key from the `pnpm dev` startup output (partial paste →
   "Invalid API key"; pipe through `pbcopy` rather than hand-selecting).
+- **Stable keys / MCP:** `cp .env.example .env`, set `TINBASE_JWT_SECRET`
+  (else keys rotate per restart) and `SUPABASE_SERVICE_ROLE_KEY` (from the
+  `pnpm dev` output). `.mcp.json` runs `@supabase/mcp-server-postgrest`
+  against the REST API using that key.
 - **Docker path:** `docker compose up -d --wait pg`, then
-  `./scripts/migrate.sh`. It expects an empty database — there are no
-  incremental migrations pre-release. To pick up schema edits, drop and
-  recreate the dev database and re-apply, or `docker compose down -v` to
-  reset everything. Connect with
+  `./scripts/migrate.sh` (applies every migration in timestamp order; it
+  expects an empty database and does not track what has been applied). To
+  pick up schema edits, drop and recreate the dev database and re-apply,
+  or `docker compose down -v` to reset everything. Connect with
   `psql postgres://postgres:postgres@localhost:5432/opencomps`.
 - Load US ZIP reference data with `./scripts/load_us_zips.sh`, then seed
   deterministic dev data with `./scripts/seed_dev.sh` (requires us_zips;
@@ -84,7 +88,18 @@ an experimental WASM build).
   PKs. Fixtures use fixed, prefix-grouped UUIDs.
 - Typed columns for anything professionals filter or sort on; asset-class
   long tail goes in `metrics` JSONB governed by
-  `comp_types.field_definitions`.
+  `comp_types.field_definitions` (per event table, per field
+  `{type, unit, label, required}`) — trigger-enforced on
+  `pending_review`/`verified` rows via SQLSTATE `23514`, lax on
+  `unverified`.
+- Canonical `comp_types`/`property_types` ship in the migration with fixed
+  UUIDs; reference them by code, never re-create them. New asset classes
+  are new rows declaring their own `field_definitions`.
+- Spatial search is exposed to REST/MCP clients as RPC functions
+  (`nearby_sales`, `nearby_unit_rents`: `lat`/`long` or `zip` + `radius_m`;
+  `comps_for_property`: subject-anchored with as_of/sale-type/size/vintage
+  filters; nearest-first, `22023` on bad arguments) — extend these rather
+  than expecting PostGIS in PostgREST filters.
 - Enums for closed sets (statuses, kinds); rows for open sets (comp types,
   property types, taxonomies). Comment open-vocabulary TEXT columns with
   example values.
@@ -104,7 +119,7 @@ an experimental WASM build).
   geography/ranges, GIN for JSONB/trigram/arrays.
 - When adding a table: add `has_table` (plus column/index checks) to
   `test_schema.sql`, a scenario test, negative constraint tests, and update
-  the README table count and layer table.
+  the README layer table.
 
 ## PR instructions
 

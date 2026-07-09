@@ -43,10 +43,21 @@ VALUES
         ST_SetSRID(ST_MakePoint(11.5335, 48.1420), 4326)::GEOGRAPHY
     );
 
-INSERT INTO comp_types (id, code, name, primary_unit, secondary_units)
+-- custom comp types beyond the canonical vocabulary: comp_types is an open
+-- set, and these declare their own long-tail metrics
+INSERT INTO comp_types (id, code, name, primary_unit, field_definitions)
 VALUES
-    ('30000000-0000-0000-0000-000000000007', 'senior_housing', 'Senior Housing', 'bed', ARRAY['care_level']),
-    ('30000000-0000-0000-0000-000000000008', 'hospitality', 'Hospitality', 'key', ARRAY['adr', 'revpar']);
+    ('30000000-0000-0000-0000-000000000007', 'senior_housing', 'Senior Housing', 'bed',
+     '{"property_sales": {
+         "care_level": {"type": "string",
+                        "label": "Care level mix (IL/AL/memory care)",
+                        "required": false}}}'),
+    ('30000000-0000-0000-0000-000000000008', 'hospitality', 'Hospitality', 'key',
+     '{"property_sales": {
+         "adr": {"type": "number", "unit": "currency_per_night",
+                 "label": "Average daily rate at sale", "required": false},
+         "revpar": {"type": "number", "unit": "currency_per_available_room",
+                    "label": "Revenue per available room", "required": false}}}');
 
 INSERT INTO property_types (id, code, name, comp_type_id)
 VALUES
@@ -117,15 +128,15 @@ VALUES
 -- ---------------------------------------------------------------------------
 INSERT INTO property_sales (
     id, property_id, comp_type_id, sale_date, currency, sale_price, sale_type,
-    buyer_name, unit_system, price_per_area, metrics, verification_status
+    buyer_name, unit_system, price_per_area, price_per_unit,
+    unit_count_at_sale, verification_status
 )
 VALUES (
     'f0000000-0000-0000-0000-000000000008',
     '60000000-0000-0000-0000-000000000009',
     '30000000-0000-0000-0000-000000000004',
     '2024-05-15', 'CAD', 24750000.00, 'arms_length',
-    'King West Residential REIT', 'metric', 5500.00,
-    '{"price_per_unit": 515625, "unit_count": 48}',
+    'King West Residential REIT', 'metric', 5500.00, 515625.00, 48,
     'verified'
 );
 

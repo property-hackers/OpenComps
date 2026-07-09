@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap;
 \ir fixtures/comp_scenarios.psql
 \ir fixtures/global_scenarios.psql
 
-SELECT plan(5);
+SELECT plan(12);
 
 -- the core comp-search shape: residential sales within 5 km of the subject
 SELECT set_eq(
@@ -91,6 +91,67 @@ SELECT ok(
           AND b.id = '60000000-0000-0000-0000-000000000007'
     ),
     'Springdale house and Peachtree condo are roughly 0.9 km apart'
+);
+
+-- ---------------------------------------------------------------------------
+-- RPC comp search: the spatial surface PostgREST/MCP clients call
+-- (POST /rpc/nearby_sales, /rpc/nearby_unit_rents)
+-- ---------------------------------------------------------------------------
+SELECT has_function('public', 'nearby_sales', 'nearby_sales RPC function exists');
+SELECT has_function('public', 'nearby_unit_rents', 'nearby_unit_rents RPC function exists');
+
+-- same shape as the raw radius search above, through the RPC surface
+SELECT set_eq(
+    $$
+        SELECT sale_id
+        FROM nearby_sales(
+            lat => (SELECT ST_Y(location::GEOMETRY) FROM properties
+                    WHERE id = '60000000-0000-0000-0000-000000000001'),
+            long => (SELECT ST_X(location::GEOMETRY) FROM properties
+                     WHERE id = '60000000-0000-0000-0000-000000000001'),
+            radius_m => 5000)
+        WHERE comp_type = 'residential'
+    $$,
+    ARRAY['f0000000-0000-0000-0000-000000000001',
+          'f0000000-0000-0000-0000-000000000006']::UUID[],
+    'nearby_sales finds the subject''s own sale and the nearby condo, not the 10 km bungalow'
+);
+
+-- ZIP-anchored search resolves the centroid through us_zips
+SELECT ok(
+    EXISTS (
+        SELECT 1 FROM nearby_sales(zip => '30305', radius_m => 20000)
+        WHERE sale_id = 'f0000000-0000-0000-0000-000000000006'
+          AND dist_meters > 0
+    ),
+    'nearby_sales anchors on a ZIP centroid via us_zips'
+);
+
+SELECT ok(
+    EXISTS (
+        SELECT 1 FROM nearby_unit_rents(
+            lat => (SELECT ST_Y(location::GEOMETRY) FROM properties
+                    WHERE id = '60000000-0000-0000-0000-000000000012'),
+            long => (SELECT ST_X(location::GEOMETRY) FROM properties
+                     WHERE id = '60000000-0000-0000-0000-000000000012'),
+            radius_m => 100)
+        WHERE rent_id = 'f5000000-0000-0000-0000-000000000005'
+    ),
+    'nearby_unit_rents finds the hotel ADR observation at its own location'
+);
+
+SELECT throws_ok(
+    'SELECT * FROM nearby_sales()',
+    '22023',
+    NULL,
+    'nearby_sales without lat/long or zip raises invalid_parameter_value'
+);
+
+SELECT throws_ok(
+    $$ SELECT * FROM nearby_sales(zip => '00000') $$,
+    '22023',
+    NULL,
+    'nearby_sales with an unknown ZIP raises invalid_parameter_value'
 );
 
 SELECT * FROM finish();

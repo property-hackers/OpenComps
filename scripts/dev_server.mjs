@@ -84,7 +84,9 @@ OpenComps dev server (${IN_MEMORY ? 'in-memory' : DATA_DIR})
   anon key:         ${backend.anonKey}
   service_role key: ${backend.serviceRoleKey}
 
-Keys are signed with a per-run random secret (set TINBASE_JWT_SECRET for
-stable keys across restarts).
+${process.env.TINBASE_JWT_SECRET
+    ? 'Keys are signed with TINBASE_JWT_SECRET (stable across restarts).'
+    : `Keys are signed with a per-run random secret (set TINBASE_JWT_SECRET for
+stable keys across restarts).`}
 Next steps: pnpm load-zips && pnpm seed
 `)

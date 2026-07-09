@@ -349,12 +349,19 @@ CREATE TABLE comp_types (
     name TEXT NOT NULL,
     description TEXT,
 
-    required_fields TEXT[] NOT NULL DEFAULT '{}',
-    optional_fields TEXT[] NOT NULL DEFAULT '{}',
+    -- The metrics vocabulary for this asset class, scoped per comp-event
+    -- table (a lease-only metric must not validate on a sale row):
+    --   {"property_leases": {"rent_per_bed": {"type": "number",
+    --       "unit": "currency_per_bed_per_month", "label": "Rent per bed",
+    --       "required": false}}, ...}
+    -- "type" is one of 'number' | 'integer' | 'string' | 'boolean'.
+    -- Enforced by validate_comp_event_metrics() on pending_review/verified
+    -- rows; unverified imports may carry undefined keys.
     field_definitions JSONB NOT NULL DEFAULT '{}',
 
+    -- open vocabulary: 'square_feet', 'rentable_square_feet', 'unit',
+    -- 'acre', 'bed', 'key', ...
     primary_unit TEXT NOT NULL,
-    secondary_units TEXT[] NOT NULL DEFAULT '{}',
 
     display_order INTEGER,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -396,6 +403,45 @@ CREATE TABLE property_type_mappings (
 
 CREATE INDEX property_type_mappings_taxonomy_lookup
     ON property_type_mappings (taxonomy_id, external_code);
+
+-- ----------------------------------------------------------------------------
+-- Canonical vocabulary. comp_types/property_types are an open set (deployments
+-- add rows), but the core asset classes ship with the schema so every
+-- environment — including a fresh production deploy — can satisfy the FKs.
+-- Fixed UUIDs keep IDs identical across environments and test fixtures.
+-- Headline financials are typed columns on the comp-event tables, so most
+-- field_definitions start minimal; grow them as real long-tail metrics arrive.
+-- ----------------------------------------------------------------------------
+INSERT INTO comp_types (id, code, name, primary_unit, display_order, field_definitions)
+VALUES
+    ('30000000-0000-0000-0000-000000000001', 'residential', 'Residential', 'square_feet', 1,
+     '{"property_sales": {
+         "unit_number": {"type": "string",
+                         "label": "Unit designator for condo/co-op sales",
+                         "required": false}},
+       "property_leases": {
+         "rent_per_bed": {"type": "number", "unit": "currency_per_bed_per_month",
+                          "label": "Rent per bed", "required": false},
+         "beds": {"type": "integer", "unit": "count",
+                  "label": "Beds covered by the lease", "required": false}}}'),
+    ('30000000-0000-0000-0000-000000000002', 'office', 'Office', 'rentable_square_feet', 2, '{}'),
+    ('30000000-0000-0000-0000-000000000003', 'retail', 'Retail', 'rentable_square_feet', 3, '{}'),
+    ('30000000-0000-0000-0000-000000000004', 'multifamily', 'Multifamily', 'unit', 4, '{}'),
+    ('30000000-0000-0000-0000-000000000005', 'industrial', 'Industrial', 'rentable_square_feet', 5,
+     '{"property_sales": {
+         "clear_height_at_sale": {"type": "number", "unit": "feet",
+                                  "label": "Clear height at sale",
+                                  "required": false}}}'),
+    ('30000000-0000-0000-0000-000000000006', 'land', 'Land', 'acre', 6, '{}');
+
+INSERT INTO property_types (id, code, name, comp_type_id, display_order)
+VALUES
+    ('31000000-0000-0000-0000-000000000001', 'RES_SFD', 'Single Family Detached', '30000000-0000-0000-0000-000000000001', 1),
+    ('31000000-0000-0000-0000-000000000004', 'MF_MID', 'Mid-Rise Multifamily', '30000000-0000-0000-0000-000000000004', 2),
+    ('31000000-0000-0000-0000-000000000002', 'COM_OFF', 'Office Building', '30000000-0000-0000-0000-000000000002', 3),
+    ('31000000-0000-0000-0000-000000000003', 'COM_RET', 'Retail Storefront', '30000000-0000-0000-0000-000000000003', 4),
+    ('31000000-0000-0000-0000-000000000005', 'COM_IND', 'Industrial Flex', '30000000-0000-0000-0000-000000000005', 5),
+    ('31000000-0000-0000-0000-000000000006', 'LND_COM', 'Commercial Land', '30000000-0000-0000-0000-000000000006', 6);
 
 -- ============================================================================
 -- 5. DATA PROVIDERS
@@ -1151,6 +1197,11 @@ CREATE TABLE property_sales (
 
     unit_system unit_system NOT NULL DEFAULT 'imperial',
     price_per_area NUMERIC(10,2),
+    -- as-of-sale snapshot for per-unit assets (multifamily, senior housing,
+    -- hospitality); distinct from the *current* unit count on the detail
+    -- tables (section 8: as-of-event state lives on the comp events)
+    price_per_unit NUMERIC(14,2) CHECK (price_per_unit IS NULL OR price_per_unit >= 0),
+    unit_count_at_sale INTEGER CHECK (unit_count_at_sale IS NULL OR unit_count_at_sale > 0),
     cap_rate NUMERIC(5,2) CHECK (cap_rate BETWEEN 0 AND 100),
     noi NUMERIC(14,2),
     noi_per_area NUMERIC(10,2),
@@ -1373,6 +1424,89 @@ CREATE INDEX property_unit_rents_metrics_index
     ON property_unit_rents USING GIN (metrics jsonb_path_ops);
 CREATE INDEX property_unit_rents_source_record_id_index
     ON property_unit_rents (source_record_id);
+
+-- ----------------------------------------------------------------------------
+-- Metrics governance. `metrics` must always be a JSON object; on
+-- pending_review/verified rows every key must be declared (with a matching
+-- JSON type) in the comp type's field_definitions for this event table, and
+-- required fields must be present. Unverified/disputed/rejected rows may
+-- carry undefined keys so raw county imports land untouched — the same
+-- status-aware posture as the verified-only ownership timeline constraint.
+-- Violations raise SQLSTATE 23514 (check_violation).
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION validate_comp_event_metrics() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    defs JSONB;
+    field TEXT;
+    declared TEXT;
+    actual TEXT;
+    value JSONB;
+BEGIN
+    IF jsonb_typeof(NEW.metrics) IS DISTINCT FROM 'object' THEN
+        RAISE EXCEPTION 'metrics on % must be a JSON object, got %',
+            TG_TABLE_NAME, COALESCE(jsonb_typeof(NEW.metrics), 'NULL')
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.comp_type_id IS NULL
+       OR NEW.verification_status NOT IN ('pending_review', 'verified') THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT COALESCE(field_definitions -> TG_TABLE_NAME, '{}'::JSONB)
+    INTO defs
+    FROM comp_types
+    WHERE id = NEW.comp_type_id;
+
+    FOR field, value IN SELECT * FROM jsonb_each(NEW.metrics) LOOP
+        declared := defs #>> ARRAY[field, 'type'];
+        IF declared IS NULL THEN
+            RAISE EXCEPTION
+                'metrics key "%" is not defined for this comp type on %',
+                field, TG_TABLE_NAME
+                USING ERRCODE = '23514';
+        END IF;
+
+        actual := jsonb_typeof(value);
+        IF (declared = 'number' AND actual <> 'number')
+           OR (declared = 'string' AND actual <> 'string')
+           OR (declared = 'boolean' AND actual <> 'boolean')
+           OR (declared = 'integer' AND (actual <> 'number'
+               OR trunc((value #>> '{}')::NUMERIC) <> (value #>> '{}')::NUMERIC))
+        THEN
+            RAISE EXCEPTION
+                'metrics key "%" on % must be of type %, got % (%)',
+                field, TG_TABLE_NAME, declared, actual, value
+                USING ERRCODE = '23514';
+        END IF;
+    END LOOP;
+
+    FOR field IN
+        SELECT d.k FROM jsonb_each(defs) AS d(k, v)
+        WHERE (d.v ->> 'required')::BOOLEAN
+    LOOP
+        IF NOT NEW.metrics ? field THEN
+            RAISE EXCEPTION
+                'required metrics key "%" is missing for this comp type on %',
+                field, TG_TABLE_NAME
+                USING ERRCODE = '23514';
+        END IF;
+    END LOOP;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER property_sales_metrics_check
+    BEFORE INSERT OR UPDATE ON property_sales
+    FOR EACH ROW EXECUTE FUNCTION validate_comp_event_metrics();
+CREATE TRIGGER property_leases_metrics_check
+    BEFORE INSERT OR UPDATE ON property_leases
+    FOR EACH ROW EXECUTE FUNCTION validate_comp_event_metrics();
+CREATE TRIGGER property_unit_rents_metrics_check
+    BEFORE INSERT OR UPDATE ON property_unit_rents
+    FOR EACH ROW EXECUTE FUNCTION validate_comp_event_metrics();
 
 CREATE TABLE property_listings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

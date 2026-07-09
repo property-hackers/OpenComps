@@ -75,21 +75,22 @@ trails.
 
 ## What's inside
 
-One file, `supabase/migrations/20260709000000_opencomps.sql` (PostgreSQL 17+,
-PostGIS 3.5+; both bundled dev paths run PostgreSQL 18 + PostGIS 3.6): 41
-tables, 3 views.
+SQL migrations in `supabase/migrations/`, targeting PostgreSQL 17+ and
+PostGIS 3.5+ (both bundled dev paths run PostgreSQL 18 + PostGIS 3.6).
 
-| Layer | Tables |
-|---|---|
-| Identity | `properties`, `parcels`, `property_parcels`, `parcel_lineage`, `property_identifiers`, `jurisdictions`, `addresses` |
-| Classification | `comp_types`, `property_types`, `property_type_mappings`, `classification_taxonomies` |
-| Provenance | `data_providers`, `source_records`, `data_verifications` |
-| Reference data | `us_zips`, `reference_dataset_loads` |
-| Physical | `residential_details`, `commercial_details`, `land_details`, `structures`, `spaces` |
-| Owners | `owners`, `owner_contacts`, `owner_addresses` |
-| Public records | `property_transfers`, `ownership_periods`, `ownership_interests`, `assessments`, `tax_bills`, `property_mortgages` |
-| Comps | `property_sales`, `property_leases`, `rent_escalations`, `lease_concessions`, `property_unit_rents`, `property_listings`, `valuations`, `income_expense_statements` |
-| Workflow | `comp_sets`, `comp_set_items`, `users` (minimal, auth-agnostic) |
+| Layer            | Tables                                                                                                                                                              |
+|------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Identity         | `properties`, `parcels`, `property_parcels`, `parcel_lineage`, `property_identifiers`, `jurisdictions`, `addresses`                                                 |
+| Classification   | `comp_types`, `property_types`, `property_type_mappings`, `classification_taxonomies`                                                                               |
+| Provenance       | `data_providers`, `source_records`, `data_verifications`                                                                                                            |
+| Reference data   | `us_zips`, `reference_dataset_loads`                                                                                                                                |
+| Physical         | `residential_details`, `commercial_details`, `land_details`, `structures`, `spaces`                                                                                 |
+| Owners           | `owners`, `owner_contacts`, `owner_addresses`                                                                                                                       |
+| Public records   | `property_transfers`, `ownership_periods`, `ownership_interests`, `assessments`, `tax_bills`, `property_mortgages`                                                  |
+| Comps            | `property_sales`, `property_leases`, `rent_escalations`, `lease_concessions`, `property_unit_rents`, `property_listings`, `valuations`, `income_expense_statements` |
+| Workflow         | `comp_sets`, `comp_set_items`, `users` (minimal, auth-agnostic)                                                                                                     |
+| Views            | `v_current_sources`, `v_current_ownership`, `v_property_sale_history`                                                                                               |
+| Search functions | `nearby_sales`, `nearby_unit_rents`, `comps_for_property`, `convert_area`                                                                                           |
 
 ## Getting started
 
@@ -147,6 +148,100 @@ pnpm test        # unit tests + the pgTAP suite on a throwaway instance
 `service_role` key from the `pnpm dev` startup output. Copy the whole
 token — it's ~200 characters and wraps across terminal lines, and a partial
 paste fails with "Invalid API key". (`... | pbcopy` is your friend.)
+
+**Stable API keys:** by default the keys rotate every restart. To keep them
+stable, `cp .env.example .env` and set `TINBASE_JWT_SECRET` — `pnpm dev`
+loads `.env` automatically.
+
+#### MCP (AI tooling)
+
+With the dev server running, AI clients can query the
+database through Supabase's
+[PostgREST MCP server](https://www.npmjs.com/package/@supabase/mcp-server-postgrest)
+(tools: `postgrestRequest` for CRUD, `sqlToRest` for SQL→REST translation).
+It authenticates with the `service_role` key from the `pnpm dev` output.
+
+- **Claude Code** — preconfigured: `.mcp.json` in this repo reads
+  `SUPABASE_SERVICE_ROLE_KEY` from `.env`; just approve the `supabase`
+  server when prompted.
+- **Claude Desktop** — Settings → Developer → Edit Config, add under
+  `mcpServers`:
+
+  ```json
+  "supabase": {
+    "command": "npx",
+    "args": ["-y", "@supabase/mcp-server-postgrest",
+             "--apiUrl", "http://127.0.0.1:54321/rest/v1",
+             "--apiKey", "<service_role key>",
+             "--schema", "public"]
+  }
+  ```
+
+- **Codex CLI** — add to `~/.codex/config.toml`:
+
+  ```toml
+  [mcp_servers.supabase]
+  command = "npx"
+  args = ["-y", "@supabase/mcp-server-postgrest",
+          "--apiUrl", "http://127.0.0.1:54321/rest/v1",
+          "--apiKey", "<service_role key>",
+          "--schema", "public"]
+  ```
+
+- **ChatGPT** — connectors only accept remote HTTP MCP servers, so a
+  localhost dev database doesn't apply.
+
+#### Agent skill
+
+`.claude/skills/opencomps/SKILL.md` teaches an AI agent the whole surface
+in one file: table map, search RPCs, write conventions, common errors,
+and worked multi-step examples. To load it:
+
+- **Claude Code** — auto-discovered inside this repo; for other projects,
+  copy the directory to `~/.claude/skills/`.
+- **Claude Desktop / claude.ai** — upload the skill folder under
+  Settings → Capabilities → Skills.
+- **Codex CLI / ChatGPT / others** — no skill system: paste the file's
+  body into `AGENTS.md`, custom instructions, or the system prompt.
+
+Any generic Postgres MCP server also works, pointed at
+`postgres://postgres@127.0.0.1:55432/postgres` — as can any agent that can
+run `psql` against that URL directly. One session at a time (PGlite is
+single-writer).
+
+#### Example prompts
+
+With the database seeded (`pnpm load-zips && pnpm seed`), ask your AI
+client things like:
+
+- `What were the three biggest multifamily sales, and at what price per unit?`
+  — filters, joins, and ordering via the REST tools.
+- `What are 2-bedroom apartments renting for around Grant Park?`
+  — spatial rent comps via `POST /rpc/nearby_unit_rents`.
+- `What sold in 30305 over the last few years?`
+  — ZIP-anchored search via `POST /rpc/nearby_sales`.
+- `Find arms-length multifamily sales since 2023 within 5 miles of Midtown Atlanta, with price per unit and cap rate.`
+  — radius comp search via `POST /rpc/nearby_sales`.
+- `Pull comps for 14 Waddell Street NE: multifamily sales from the last four years within 5 miles, 30 to 130 units.`
+  — subject-anchored selection via `POST /rpc/comps_for_property`.
+- `Research current 2-bedroom rents around Grant Park on the web and save
+  them to the database as rent comps.`
+  — writes work too: REST inserts into `addresses`, `properties`, and
+  `property_unit_rents` (set `observed_on`, `source_url`, and leave
+  `verification_status` at `unverified` for scraped data); geography
+  columns accept `SRID=4326;POINT(lon lat)` strings. Then re-ask the
+  Grant Park rent question above — the new comps come back through
+  `nearby_unit_rents` alongside the seed data.
+- `What's the average cap rate by asset class?`
+  — aggregates need SQL, so this goes through `psql` (or a Postgres MCP).
+
+Spatial search ships as database functions, so REST/MCP clients get PostGIS
+without raw SQL: `nearby_sales` and `nearby_unit_rents` anchor on
+`lat`/`long` or a `zip` centroid (ZIPs need `pnpm load-zips`) with a
+`radius_m`; `comps_for_property` anchors on a subject property and adds
+appraisal-style culling — recency against an `as_of` effective date,
+arms-length-only by default, size and vintage brackets, strict property-type
+matching. Aggregates still need the SQL path.
 
 The database persists in `.tinbase/pglite/` (gitignored).
 `rm -rf .tinbase` resets everything (next boot re-migrates; re-run
@@ -282,8 +377,9 @@ identical data.
   unique indexes, never PKs.
 - **Typed columns for hot fields, JSONB for the long tail.** If
   professionals filter or sort on it, it's a column. If it's asset-class
-  specific (RevPAR, per-bed care level), it goes in `metrics` governed by
-  `comp_types.field_definitions`.
+  specific (RevPAR, per-bed rent), it goes in `metrics`, governed by
+  `comp_types.field_definitions`: trigger-enforced on
+  `pending_review`/`verified` rows, lax for raw `unverified` imports.
 - **Enums for closed sets, rows for open sets.** Statuses and kinds are PG
   enums; comp types, property types, and taxonomies are data.
 - **Money stays as quoted.** Every money-bearing table carries a `currency`

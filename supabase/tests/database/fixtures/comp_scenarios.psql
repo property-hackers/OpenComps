@@ -23,13 +23,8 @@ INSERT INTO owners (id, name, normalized_name, kind)
 VALUES
     ('90000000-0000-0000-0000-000000000008', 'Westpark Acquisitions LLC', 'westpark acquisitions llc', 'llc');
 
-INSERT INTO comp_types (id, code, name, primary_unit, secondary_units)
-VALUES
-    ('30000000-0000-0000-0000-000000000006', 'land', 'Land', 'acre', ARRAY['price_per_acre']);
-
-INSERT INTO property_types (id, code, name, comp_type_id)
-VALUES
-    ('31000000-0000-0000-0000-000000000006', 'LND_COM', 'Commercial Land', '30000000-0000-0000-0000-000000000006');
+-- comp_types/property_types (including land / LND_COM) are canonical schema
+-- vocabulary; fixtures reference the fixed UUIDs instead of creating them.
 
 -- ---------------------------------------------------------------------------
 -- A. Emory Point Apartments (property 4, parcel 4, DeKalb)
@@ -110,7 +105,8 @@ VALUES (
 
 INSERT INTO property_sales (
     id, property_id, transfer_id, comp_type_id, sale_date, sale_price,
-    sale_type, buyer_name, seller_name, cap_rate, noi, metrics,
+    sale_type, buyer_name, seller_name, cap_rate, noi,
+    price_per_unit, unit_count_at_sale,
     contributed_by_id, verification_status
 )
 VALUES (
@@ -120,7 +116,7 @@ VALUES (
     '30000000-0000-0000-0000-000000000004',
     '2022-06-30', 68500000.00, 'arms_length',
     'Emory Point Owner LLC', NULL, 4.90, 3356500.00,
-    '{"price_per_unit": 428125, "unit_count": 160}',
+    428125.00, 160,
     '10000000-0000-0000-0000-000000000001', 'verified'
 );
 
@@ -228,7 +224,7 @@ VALUES (
     '30000000-0000-0000-0000-000000000005',
     '2024-09-15', 7050000.00, 'arms_length',
     'Westpark Acquisitions LLC', 'Westpark Industrial LLC', 130.56,
-    '{"clear_height_ft": 24}',
+    '{"clear_height_at_sale": 24}',
     '10000000-0000-0000-0000-000000000001', 'verified'
 );
 
@@ -332,7 +328,7 @@ VALUES (
     '60000000-0000-0000-0000-000000000007',
     '30000000-0000-0000-0000-000000000001',
     '2024-08-15', 410000.00, 'arms_length',
-    'Private Buyer', '{"unit": "1204"}',
+    'Private Buyer', '{"unit_number": "1204"}',
     '10000000-0000-0000-0000-000000000001', 'verified'
 );
 
@@ -376,16 +372,18 @@ VALUES (
     ARRAY['water', 'sewer', 'electric'], 'X', 'unentitled', TRUE
 );
 
+-- price per acre is a display conversion (217,800/acre); the stored figure is
+-- price_per_area in base units ($5.00/sq ft x 43,560)
 INSERT INTO property_sales (
     id, property_id, comp_type_id, sale_date, sale_price, sale_type,
-    buyer_name, metrics, contributed_by_id, verification_status
+    buyer_name, price_per_area, contributed_by_id, verification_status
 )
 VALUES (
     'f0000000-0000-0000-0000-000000000007',
     '60000000-0000-0000-0000-000000000008',
     '30000000-0000-0000-0000-000000000006',
     '2024-03-01', 1306800.00, 'arms_length',
-    'Industrial Land Ventures LLC', '{"price_per_acre": 217800}',
+    'Industrial Land Ventures LLC', 5.00,
     '10000000-0000-0000-0000-000000000001', 'verified'
 );
 

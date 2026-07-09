@@ -373,28 +373,8 @@ VALUES
     (pg_temp.duuid('user', 'reviewer'), 'reviewer@opencomps.local', 'Dev Reviewer')
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO comp_types (id, code, name, primary_unit, secondary_units)
-VALUES
-    (pg_temp.duuid('comp_type', 'residential'), 'residential', 'Residential', 'square_feet', ARRAY['bedrooms', 'bathrooms']),
-    (pg_temp.duuid('comp_type', 'office'), 'office', 'Office', 'rentable_square_feet', ARRAY['cap_rate', 'noi']),
-    (pg_temp.duuid('comp_type', 'retail'), 'retail', 'Retail', 'rentable_square_feet', ARRAY['frontage']),
-    (pg_temp.duuid('comp_type', 'multifamily'), 'multifamily', 'Multifamily', 'unit', ARRAY['bedrooms', 'monthly_rent']),
-    (pg_temp.duuid('comp_type', 'industrial'), 'industrial', 'Industrial', 'rentable_square_feet', ARRAY['clear_height']),
-    (pg_temp.duuid('comp_type', 'land'), 'land', 'Land', 'acre', ARRAY['price_per_acre'])
-ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO property_types (id, code, name, comp_type_id)
-SELECT pg_temp.duuid('property_type', v.code), v.code, v.name,
-       (SELECT id FROM comp_types WHERE code = v.comp_code)
-FROM (VALUES
-    ('RES_SFD', 'Single Family Detached', 'residential'),
-    ('MF_MID', 'Mid-Rise Multifamily', 'multifamily'),
-    ('COM_OFF', 'Office Building', 'office'),
-    ('COM_RET', 'Retail Storefront', 'retail'),
-    ('COM_IND', 'Industrial Flex', 'industrial'),
-    ('LND_COM', 'Commercial Land', 'land')
-) AS v(code, name, comp_code)
-ON CONFLICT (code) DO NOTHING;
+-- comp_types/property_types are canonical vocabulary shipped by the schema
+-- migration; the seed looks them up by code rather than creating them.
 
 -- real counties, resolved through the us_zips reference table
 INSERT INTO jurisdictions (id, country, region, name, kind, authority_code)
@@ -575,8 +555,8 @@ FROM _seed s;
 
 INSERT INTO property_sales (
     id, property_id, transfer_id, comp_type_id, sale_date, sale_price,
-    sale_type, buyer_name, price_per_area, cap_rate, metrics,
-    contributed_by_id, verification_status
+    sale_type, buyer_name, price_per_area, cap_rate, price_per_unit,
+    unit_count_at_sale, contributed_by_id, verification_status
 )
 SELECT pg_temp.duuid('sale', s.source_id),
        pg_temp.duuid('property', s.source_id),
@@ -594,11 +574,8 @@ SELECT pg_temp.duuid('sale', s.source_id),
        CASE WHEN s.pt_code IN ('MF_MID', 'COM_OFF', 'COM_RET', 'COM_IND')
             THEN ROUND((4.5 + 4 * pg_temp.hrand(s.source_id || ':cap'))::NUMERIC, 2)
        END,
-       CASE WHEN s.pt_code = 'MF_MID'
-            THEN JSONB_BUILD_OBJECT('price_per_unit', ROUND(s.est_value / s.unit_count),
-                                    'unit_count', s.unit_count)
-            ELSE '{}'::JSONB
-       END,
+       CASE WHEN s.pt_code = 'MF_MID' THEN ROUND(s.est_value / s.unit_count, 2) END,
+       CASE WHEN s.pt_code = 'MF_MID' THEN s.unit_count END,
        pg_temp.duuid('user', 'dev'),
        CASE WHEN s.is_verified THEN 'verified' ELSE 'unverified' END::verification_status
 FROM _seed s

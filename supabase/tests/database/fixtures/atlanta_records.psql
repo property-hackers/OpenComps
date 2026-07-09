@@ -54,21 +54,8 @@ INSERT INTO classification_taxonomies (id, code, name, version)
 VALUES
     ('32000000-0000-0000-0000-000000000001', 'uad_36', 'Uniform Appraisal Dataset', '3.6');
 
-INSERT INTO comp_types (id, code, name, primary_unit, secondary_units)
-VALUES
-    ('30000000-0000-0000-0000-000000000001', 'residential', 'Residential', 'square_feet', ARRAY['bedrooms', 'bathrooms']),
-    ('30000000-0000-0000-0000-000000000002', 'office', 'Office', 'rentable_square_feet', ARRAY['cap_rate', 'noi']),
-    ('30000000-0000-0000-0000-000000000003', 'retail', 'Retail', 'rentable_square_feet', ARRAY['frontage']),
-    ('30000000-0000-0000-0000-000000000004', 'multifamily', 'Multifamily', 'unit', ARRAY['bedrooms', 'monthly_rent']),
-    ('30000000-0000-0000-0000-000000000005', 'industrial', 'Industrial', 'rentable_square_feet', ARRAY['clear_height']);
-
-INSERT INTO property_types (id, code, name, comp_type_id)
-VALUES
-    ('31000000-0000-0000-0000-000000000001', 'RES_SFD', 'Single Family Detached', '30000000-0000-0000-0000-000000000001'),
-    ('31000000-0000-0000-0000-000000000002', 'COM_OFF', 'Office Building', '30000000-0000-0000-0000-000000000002'),
-    ('31000000-0000-0000-0000-000000000003', 'COM_RET', 'Retail Storefront', '30000000-0000-0000-0000-000000000003'),
-    ('31000000-0000-0000-0000-000000000004', 'MF_MID', 'Mid-Rise Multifamily', '30000000-0000-0000-0000-000000000004'),
-    ('31000000-0000-0000-0000-000000000005', 'COM_IND', 'Industrial Flex', '30000000-0000-0000-0000-000000000005');
+-- comp_types/property_types are canonical schema vocabulary (fixed UUIDs,
+-- 30000000-.../31000000-...); fixtures reference them instead of creating them.
 
 INSERT INTO property_type_mappings (property_type_id, taxonomy_id, external_code, external_label)
 VALUES

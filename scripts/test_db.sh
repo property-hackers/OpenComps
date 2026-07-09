@@ -31,16 +31,13 @@ if ! [[ "$TEST_DB" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
   exit 1
 fi
 
-# NOTE: the exactly-one glob below and scripts/migrate.sh apply a single
-# schema file, while scripts/dev_server.mjs applies every
-# supabase/migrations/*.sql in order via tinbase. If a second migration file
-# is ever added, update this script and migrate.sh in lockstep.
-SCHEMA_FILES=("$ROOT_DIR"/supabase/migrations/*_opencomps.sql)
-if [ ${#SCHEMA_FILES[@]} -ne 1 ] || [ ! -f "${SCHEMA_FILES[0]}" ]; then
-  echo "Expected exactly one supabase/migrations/*_opencomps.sql, found: ${SCHEMA_FILES[*]}" >&2
+# All migrations, applied in timestamp order (same order tinbase uses at
+# boot in scripts/dev_server.mjs and psql uses in scripts/migrate.sh).
+SCHEMA_FILES=("$ROOT_DIR"/supabase/migrations/*.sql)
+if [ ${#SCHEMA_FILES[@]} -eq 0 ] || [ ! -f "${SCHEMA_FILES[0]}" ]; then
+  echo "No migrations found in supabase/migrations/" >&2
   exit 1
 fi
-SCHEMA_FILE="${SCHEMA_FILES[0]}"
 
 BACKEND="${OPENCOMPS_TEST_BACKEND:-}"
 if [ -z "$BACKEND" ]; then
@@ -78,8 +75,10 @@ docker)
   echo "Preparing test database ${TEST_DB}..."
   docker compose exec -T pg psql -U "$POSTGRES_USER_NAME" -d postgres -v ON_ERROR_STOP=1 -q \
     -c "DROP DATABASE IF EXISTS ${TEST_DB};" -c "CREATE DATABASE ${TEST_DB};"
-  docker compose exec -T pg psql -U "$POSTGRES_USER_NAME" -d "$TEST_DB" -v ON_ERROR_STOP=1 -1 -q -f - \
-    < "$SCHEMA_FILE"
+  for schema_file in "${SCHEMA_FILES[@]}"; do
+    docker compose exec -T pg psql -U "$POSTGRES_USER_NAME" -d "$TEST_DB" -v ON_ERROR_STOP=1 -1 -q -f - \
+      < "$schema_file"
+  done
 
   echo "Running pgTAP tests with container pg_prove..."
   docker compose exec -T \
@@ -94,7 +93,7 @@ pglite)
   DB="postgres://postgres@127.0.0.1:${PORT}/postgres"
 
   echo "Booting in-memory PGlite test server on port ${PORT}..."
-  node "$ROOT_DIR/scripts/test_server.mjs" --schema "$SCHEMA_FILE" --port "$PORT" &
+  node "$ROOT_DIR/scripts/test_server.mjs" --port "$PORT" &
   SERVER_PID=$!
   trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
@@ -126,7 +125,9 @@ local)
   echo "Preparing test database ${TEST_DB}..."
   psql "$ADMIN_DB" -v ON_ERROR_STOP=1 -q \
     -c "DROP DATABASE IF EXISTS ${TEST_DB};" -c "CREATE DATABASE ${TEST_DB};"
-  psql "$DB" -v ON_ERROR_STOP=1 -1 -q -f "$SCHEMA_FILE"
+  for schema_file in "${SCHEMA_FILES[@]}"; do
+    psql "$DB" -v ON_ERROR_STOP=1 -1 -q -f "$schema_file"
+  done
 
   echo "Running pgTAP tests with local psql..."
   run_tap_files "$DB"

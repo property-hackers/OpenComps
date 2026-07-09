@@ -4,7 +4,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
 
-SELECT plan(74);
+SELECT plan(80);
 
 SELECT has_extension('postgis', 'postgis extension is available');
 SELECT has_extension('citext', 'citext extension is available');
@@ -77,6 +77,12 @@ SELECT col_not_null('public', 'reference_dataset_loads', 'dataset', 'reference d
 SELECT col_not_null('public', 'reference_dataset_loads', 'row_count', 'reference dataset loads require a row count');
 SELECT col_type_is('public', 'reference_dataset_loads', 'loaded_at', 'timestamp with time zone', 'reference dataset loads are timestamped');
 SELECT hasnt_column('public', 'us_zips', 'loaded_at', 'us_zips rows do not carry per-row load timestamps');
+SELECT col_type_is('public', 'comp_types', 'field_definitions', 'jsonb', 'comp types define their metrics vocabulary in JSONB');
+SELECT hasnt_column('public', 'comp_types', 'required_fields', 'required-ness lives inside field_definitions, not a parallel array');
+SELECT hasnt_column('public', 'comp_types', 'optional_fields', 'optional fields are simply non-required field_definitions entries');
+SELECT hasnt_column('public', 'comp_types', 'secondary_units', 'per-field units live inside field_definitions, not a units array');
+SELECT col_type_is('public', 'property_sales', 'price_per_unit', 'numeric(14,2)', 'per-unit sale price is a typed column, not a metrics key');
+SELECT col_type_is('public', 'property_sales', 'unit_count_at_sale', 'integer', 'unit count at sale is a typed as-of-event snapshot');
 
 SELECT has_index('public', 'parcels', 'parcels_active_number_index', 'active parcel number uniqueness index exists');
 SELECT has_index('public', 'property_parcels', 'property_parcels_one_current_primary_index', 'one current primary parcel index exists');
