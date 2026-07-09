@@ -39,7 +39,10 @@ an experimental WASM build).
   expects an empty database and does not track what has been applied). To
   pick up schema edits, drop and recreate the dev database and re-apply,
   or `docker compose down -v` to reset everything. Connect with
-  `psql postgres://postgres:postgres@localhost:5432/opencomps`.
+  `psql postgres://postgres:postgres@localhost:5432/opencomps`. If host
+  port 5432 is already bound, `up` fails immediately — set
+  `POSTGRES_PORT=<free port>` on the compose command and every script
+  call that follows.
 - Load US ZIP reference data with `./scripts/load_us_zips.sh`, then seed
   deterministic dev data with `./scripts/seed_dev.sh` (requires us_zips;
   refuses to run twice).
@@ -127,7 +130,7 @@ an experimental WASM build).
   database before committing.
 - Open an issue describing the modeling problem before writing DDL.
 - Keep dev seeding deterministic: derive every generated value from
-  `md5(source_id || ':salt')` (see `database/seeds/dev_seed.sql`), never
+  `md5(source_id || ':salt')` (see `supabase/seed.sql`), never
   `random()` or `now()`.
 - SimpleMaps ZIP data is free-tier: production use requires a link back to
   https://simplemaps.com/data/us-zips. Never commit the dataset itself.

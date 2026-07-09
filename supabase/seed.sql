@@ -1,6 +1,6 @@
 -- ============================================================================
 -- OpenComps dev seed: realistic Atlanta-metro dev data
--- Apply with scripts/seed_dev.sh (or: psql -f database/seeds/dev_seed.sql
+-- Apply with scripts/seed_dev.sh (or: psql -f supabase/seed.sql
 -- from anywhere -- the seed is self-contained).
 --
 -- Built from a curated sample of 250 real, public-record Atlanta-metro

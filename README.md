@@ -274,6 +274,10 @@ docker compose up -d --wait pg
 ./scripts/test_db.sh
 ```
 
+The first boot builds the image from source (pgTAP, `pg_prove`) — allow
+several minutes. If `127.0.0.1:5432` is already bound, `up` fails
+immediately; set `POSTGRES_PORT` on each command as shown below.
+
 Two databases are involved: `migrate.sh` applies the schema to the
 `opencomps` dev database, while `test_db.sh` runs against a dedicated
 `opencomps_test` database that it recreates from the schema file on every
