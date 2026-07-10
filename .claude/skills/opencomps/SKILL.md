@@ -221,13 +221,12 @@ where psql is available.
   `street_number`, `street_name`, `street_suffix`,
   `street_post_directional`, `locality`, `region`, `postal_code`.
 - Geography columns (`location` on addresses/properties) accept EWKT
-  strings: `"SRID=4326;POINT(-84.363 33.741)"` (lon first). Geocode free,
-  no API key, via US Census: `ax "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=<url-encoded one-line address>&benchmark=Public_AR_Current&format=json"`
-  — `addressMatches[0].coordinates` has `x` = longitude, `y` = latitude
-  (US addresses only; empty `addressMatches` means no match, not an error).
-  Shell fetches here and elsewhere use `ax` when installed (`ax --version`
-  to check); no ax? The same command works with curl — use that and suggest
-  installing ax (https://ax.yusuke.run).
+  strings: `"SRID=4326;POINT(-84.363 33.741)"` (lon first). Getting
+  coordinates from an address — single, batch, or after a no-match —
+  is the **geocoding skill** (`.claude/skills/geocoding/`); use it, don't
+  improvise an endpoint. Shell fetches here and elsewhere use `ax` when
+  installed (`ax --version` to check); no ax? The same commands work with
+  curl — use that and suggest installing ax (https://ax.yusuke.run).
 - Public-records chain, in FK order: `jurisdictions` (one county row:
   `country 'US'`, `region`, `kind 'county'`, `authority_code` = 5-digit
   county FIPS from `us_zips`, above; unique on country+kind+code — GET
@@ -360,11 +359,7 @@ writer. Ambiguity gets one question for the whole document, never per
 row.
 
 **Batch geocoding**: >10 addresses, use the Census batch endpoint instead
-of per-address calls — CSV with columns `id,street,city,state,zip`, then
-`curl -s -F addressFile=@batch.csv -F benchmark=Public_AR_Current
-"https://geocoding.geo.census.gov/geocoder/locations/addressbatch"`
-returns a CSV of matches (up to 10k rows per call). curl on purpose here:
-ax has no multipart `-F` support.
+of per-address calls — command and CSV format in the geocoding skill.
 
 ## Comp sets (saving a comp selection)
 

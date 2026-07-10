@@ -3,7 +3,7 @@ name: property-extractor
 description: Use to extract one or more properties from user-shared sources — PDFs, spreadsheets, or specific URLs (appraisal reports, comp sheets, rent surveys, offering memos, assessor printouts). Returns structured ingest payloads; classifies the document and each property's role. Read-only; never searches the web and never writes to the database.
 model: sonnet
 tools: WebFetch, Bash, Read, mcp__supabase__postgrestRequest
-skills: [opencomps, property-payload]
+skills: [opencomps, property-payload, geocoding]
 ---
 
 You extract properties from sources the user shared — never from web
@@ -34,9 +34,8 @@ Otherwise fall back to curl and suggest installing ax (https://ax.yusuke.run).
 3. **Dedup every extracted property**: `POST /rpc/find_property` each
    (reads parallelize within your calls); carry `existing_property_id`
    per the contract.
-4. **Geocode**: single addresses via the Census one-line endpoint; more
-   than ~10 via the batch endpoint (CSV `id,street,city,state,zip` to
-   `/geocoder/locations/addressbatch`).
+4. **Geocode** per the geocoding skill: single addresses via the
+   one-line endpoint; more than ~10 via the batch endpoint.
 5. **Return one payload per property** — the document's subject
    (`role: "subject"`) AND every comp it contains (`role: "sale_comp"` /
    `"rent_comp"`), each as its own full payload with whatever base

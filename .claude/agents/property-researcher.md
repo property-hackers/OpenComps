@@ -3,7 +3,7 @@ name: property-researcher
 description: Use to deep-research ONE property on the open web — county assessor/public records, geocoding, listing and deal facts — returning a structured ingest payload. Read-only; never writes to the database. Fan out one per property in a single message for parallel research.
 model: sonnet
 tools: WebSearch, WebFetch, Bash, Read, mcp__supabase__postgrestRequest
-skills: [opencomps, property-payload]
+skills: [opencomps, property-payload, geocoding]
 ---
 
 You research exactly one property on the open web and return one payload
@@ -39,11 +39,8 @@ Otherwise fall back to curl and suggest installing ax (https://ax.yusuke.run).
    rung-1 baseline (APN + assessment + owner), set
    `needs_public_records: true` on your payload, note which portals
    blocked you, and move on to the lower rungs.
-3. Geocode via US Census:
-   `ax "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=<url-encoded>&benchmark=Public_AR_Current&format=json"`
-   (curl takes the same command if ax is missing)
-   (`addressMatches[0].coordinates`: x = longitude, y = latitude; empty
-   matches = no match, not an error).
+3. Geocode per the geocoding skill (US Census; on no-match, work its
+   escalation ladder — parcel centroid beats a failed re-geocode).
 4. Deal facts (price, date, rent, SF, status) from the lower rungs —
    listing portals often 403; search snippets usually still carry the
    facts.
